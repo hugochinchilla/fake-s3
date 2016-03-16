@@ -19,11 +19,12 @@ module FakeS3
     # sub second precision.
     SUBSECOND_PRECISION = 3
 
-    def initialize(root, quiet_mode)
+    def initialize(root, quiet_mode, create_buckets)
       @root = root
       @buckets = []
       @bucket_hash = {}
       @quiet_mode = quiet_mode
+      @create_buckets = create_buckets
       Dir[File.join(root,"*")].each do |bucket|
         bucket_name = File.basename(bucket)
         bucket_obj = Bucket.new(bucket_name,Time.now,[])
@@ -59,7 +60,15 @@ module FakeS3
       File.join(@root, bucket.name)
     end
 
-    def get_bucket(bucket)
+    def get_or_create_bucket(bucket, force_create = false)
+      if !@bucket_hash[bucket] && (force_create || @create_buckets)
+        if force_create
+          logger.debug("Going go create bucket #{bucket}")
+        else
+          logger.debug("Creating bucket #{bucket} on demand")
+        end
+        create_bucket(bucket)
+      end
       @bucket_hash[bucket]
     end
 
@@ -69,12 +78,13 @@ module FakeS3
       if !@bucket_hash[bucket]
         @buckets << bucket_obj
         @bucket_hash[bucket] = bucket_obj
+        logger.debug("Created bucket #{bucket}")
       end
       bucket_obj
     end
 
     def delete_bucket(bucket_name)
-      bucket = get_bucket(bucket_name)
+      bucket = get_or_create_bucket(bucket_name)
       raise NoSuchBucket if !bucket
       raise BucketNotEmpty if bucket.objects.count > 0
       FileUtils.rm_r(get_bucket_folder(bucket))
@@ -83,6 +93,7 @@ module FakeS3
 
     def get_object(bucket, object_name, request)
       begin
+        get_or_create_bucket(bucket)
         real_obj = S3Object.new
         obj_root = File.join(@root,bucket,object_name,FAKE_S3_METADATA_DIR)
         metadata = File.open(File.join(obj_root, "metadata")) { |file| YAML::load(file) }
@@ -113,6 +124,9 @@ module FakeS3
     end
 
     def copy_object(src_bucket_name, src_name, dst_bucket_name, dst_name, request)
+      get_or_create_bucket(src_bucket_name)
+      get_or_create_bucket(dst_bucket_name)
+
       src_root = File.join(@root,src_bucket_name,src_name,FAKE_S3_METADATA_DIR)
       src_metadata_filename = File.join(src_root, "metadata")
       src_metadata = YAML.load(File.open(src_metadata_filename, 'rb').read)
@@ -149,8 +163,8 @@ module FakeS3
         end
       end
 
-      src_bucket = get_bucket(src_bucket_name) || create_bucket(src_bucket_name)
-      dst_bucket = get_bucket(dst_bucket_name) || create_bucket(dst_bucket_name)
+      src_bucket = get_or_create_bucket(src_bucket_name, force_create = true)
+      dst_bucket = get_or_create_bucket(dst_bucket_name, force_create = true)
 
       obj = S3Object.new
       obj.name = dst_name

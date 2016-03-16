@@ -78,7 +78,7 @@ module FakeS3
         buckets = @store.buckets
         response.body = XmlAdapter.buckets(buckets)
       when 'LS_BUCKET'
-        bucket_obj = @store.get_bucket(s_req.bucket)
+        bucket_obj = @store.get_or_create_bucket(s_req.bucket)
         if bucket_obj
           response.status = 200
           response['Content-Type'] = "application/xml"
@@ -198,12 +198,7 @@ module FakeS3
         object = @store.copy_object(s_req.src_bucket, s_req.src_object, s_req.bucket, s_req.object, request)
         response.body = XmlAdapter.copy_object_result(object)
       when Request::STORE
-        bucket_obj = @store.get_bucket(s_req.bucket)
-        if !bucket_obj
-          # Lazily create a bucket.  TODO fix this to return the proper error
-          bucket_obj = @store.create_bucket(s_req.bucket)
-        end
-
+        bucket_obj = @store.get_or_create_bucket(s_req.bucket, force_create = true)
         real_obj = @store.store_object(bucket_obj, s_req.object, s_req.webrick_request)
         response.header['ETag'] = "\"#{real_obj.md5}\""
       when Request::CREATE_BUCKET
@@ -230,10 +225,7 @@ module FakeS3
         response['Content-Type'] = "text/xml"
         response.body = XmlAdapter.copy_object_result real_obj
       else
-        bucket_obj  = @store.get_bucket(s_req.bucket)
-        if !bucket_obj
-          bucket_obj = @store.create_bucket(s_req.bucket)
-        end
+        bucket_obj  = @store.get_or_create_bucket(s_req.bucket, force_create = true)
         real_obj    = @store.store_object(
           bucket_obj, part_name,
           request
@@ -272,7 +264,7 @@ module FakeS3
         eos
       elsif query.has_key?('uploadId')
         upload_id  = query['uploadId'].first
-        bucket_obj = @store.get_bucket(s_req.bucket)
+        bucket_obj = @store.get_or_create_bucket(s_req.bucket)
         real_obj   = @store.combine_object_parts(
           bucket_obj,
           upload_id,
@@ -292,7 +284,7 @@ module FakeS3
         filename = $1 if request.body =~ /filename="(.*)"/
         key      = key.gsub('${filename}', filename)
 
-        bucket_obj = @store.get_bucket(s_req.bucket) || @store.create_bucket(s_req.bucket)
+        bucket_obj = @store.get_or_create_bucket(s_req.bucket, force_create = true)
         real_obj   = @store.store_object(bucket_obj, key, s_req.webrick_request)
 
         response['Etag'] = "\"#{real_obj.md5}\""
@@ -335,11 +327,11 @@ module FakeS3
 
       case s_req.type
       when Request::DELETE_OBJECTS
-        bucket_obj = @store.get_bucket(s_req.bucket)
+        bucket_obj = @store.get_or_create_bucket(s_req.bucket)
         keys = XmlParser.delete_objects(s_req.webrick_request)
         @store.delete_objects(bucket_obj,keys,s_req.webrick_request)
       when Request::DELETE_OBJECT
-        bucket_obj = @store.get_bucket(s_req.bucket)
+        bucket_obj = @store.get_or_create_bucket(s_req.bucket)
         @store.delete_object(bucket_obj,s_req.object,s_req.webrick_request)
       when Request::DELETE_BUCKET
         @store.delete_bucket(s_req.bucket)
