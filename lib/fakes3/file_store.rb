@@ -1,5 +1,6 @@
 require 'fileutils'
 require 'time'
+require 'fakes3/logging'
 require 'fakes3/s3_object'
 require 'fakes3/bucket'
 require 'fakes3/rate_limitable_file'
@@ -8,6 +9,8 @@ require 'yaml'
 
 module FakeS3
   class FileStore
+    include Logging
+
     FAKE_S3_METADATA_DIR = ".fakes3_metadataFFF"
 
     # S3 clients with overly strict date parsing fails to parse ISO 8601 dates
@@ -100,10 +103,8 @@ module FakeS3
         real_obj.custom_metadata = metadata.fetch(:custom_metadata) { {} }
         return real_obj
       rescue
-        unless @quiet_mode
-          puts $!
-          $!.backtrace.each { |line| puts line }
-        end
+        logger.error($!.message)
+        $!.backtrace.each { |line| logger.error(line) }
         return nil
       end
     end
@@ -221,10 +222,8 @@ module FakeS3
         bucket.add(obj)
         return obj
       rescue
-        unless @quiet_mode
-          puts $!
-          $!.backtrace.each { |line| puts line }
-        end
+        logger.error($!.message)
+        $!.backtrace.each { |line| logger.error(line) }
         return nil
       end
     end
@@ -266,8 +265,8 @@ module FakeS3
         object = bucket.find(object_name)
         bucket.remove(object)
       rescue
-        puts $!
-        $!.backtrace.each { |line| puts line }
+        logger.error($!.message)
+        $!.backtrace.each { |line| logger.error(line) }
         return nil
       end
     end
