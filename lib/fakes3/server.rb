@@ -196,6 +196,12 @@ module FakeS3
       case s_req.type
       when Request::COPY
         object = @store.copy_object(s_req.src_bucket, s_req.src_object, s_req.bucket, s_req.object, request)
+        if !object
+          response.status = 404
+          response.body = XmlAdapter.error_no_such_key(s_req.object)
+          response['Content-Type'] = "application/xml"
+          return
+        end
         response.body = XmlAdapter.copy_object_result(object)
       when Request::STORE
         bucket_obj = @store.get_or_create_bucket(s_req.bucket, force_create = true)
@@ -221,6 +227,13 @@ module FakeS3
           s_req.bucket    , part_name,
           request
         )
+
+        if !real_obj
+          response.status = 404
+          response.body = XmlAdapter.error_no_such_key(s_req.object)
+          response['Content-Type'] = "application/xml"
+          return
+        end
 
         response['Content-Type'] = "text/xml"
         response.body = XmlAdapter.copy_object_result real_obj
